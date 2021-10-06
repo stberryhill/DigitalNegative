@@ -9,21 +9,13 @@
 #define FILE_EOF EOF
 #define MAX_STRING_SIZE 4096
 
+#ifndef FILE_READER_MAX_READ_SIZE
+#define FILE_READER_MAX_READ_SIZE 256
+#endif
+
 #ifndef FILE_READER_BUFFER_SIZE
 #define FILE_READER_BUFFER_SIZE 1024
 #endif
-
-typedef struct {
-  File *file;
-  FileByteOrder byteOrder;
-  char buffer[FILE_READER_BUFFER_SIZE];
-} FileReader;
-
-typedef struct {
-  FILE *descriptor;
-  int size;
-  bool reachedEndOfFile;
-} File;
 
 typedef enum {
   FILE_MODE_READ,
@@ -36,10 +28,21 @@ typedef enum {
   FILE_BYTE_ORDER_LITTLE_ENDIAN
 } FileByteOrder;
 
+typedef struct {
+  FILE *descriptor;
+  int size;
+  bool reachedEndOfFile;
+} File;
+
+typedef struct {
+  File *file;
+  FileByteOrder byteOrder;
+} FileReader;
+
 FileReader *FileReader_Open(const char *fileName);
 void FileReader_Close(FileReader *fileReader);
-char *FileReader_ReadNBytes(FileReader *reader, const int n);
-int FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n);
+void FileReader_ReadNBytes(FileReader *reader, const int n, char *output);
+void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output);
 
 File *File_Open(const char *fileName, FileMode fileMode);
 void File_Close(File *file);
@@ -56,7 +59,7 @@ int File_GetSize(File *file);
 
 FileReader *FileReader_Open(const char *fileName) {
   FileReader *reader = malloc(sizeof *reader);
-  reader->file = File_Open("fileName", FILE_MODE_READ);
+  reader->file = File_Open(fileName, FILE_MODE_READ);
   reader->byteOrder = FILE_BYTE_ORDER_LITTLE_ENDIAN;
 
   return reader;
@@ -67,11 +70,30 @@ void FileReader_Close(FileReader *reader) {
   free(reader);
 }
 
-char *FileReader_ReadNBytes(FileReader *reader, const int n) {
-  return "";
+void FileReader_ReadNBytes(FileReader *reader, const int n, char *output) {
+
+  int i;
+  for (i = 0; i < n; i++) {
+    output[i] = File_ReadCharacter(reader->file);
+  }
+
+  output[i] = '\0';
 }
-int FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n) {
-  return 0;
+
+void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output) {
+  char bytes[n];
+  FileReader_ReadNBytes(reader, n, bytes);
+
+  int number = 0;
+  int i;
+  int shift = reader->byteOrder == FILE_BYTE_ORDER_LITTLE_ENDIAN ? 0 : n * 8;
+  int shiftIncrement = reader->byteOrder == FILE_BYTE_ORDER_LITTLE_ENDIAN ? 8 : -8;
+  for (i = 0; i < n; i++) {
+    number += bytes[i] << shift;
+    shift += shiftIncrement;
+  }
+
+  *output = number;
 }
 
 File *File_Open(const char *fileName, FileMode fileMode) {

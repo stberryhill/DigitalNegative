@@ -5,11 +5,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
+
+#define TIFF_MAGIC_NUMBER 42
 
 typedef struct {
 } DigitalNegative;
 
-DigitalNegative DigtalNegative_Decode(const char *filePath);
+void DigitalNegative_Decode(const char *filePath, DigitalNegative *output);
 void DigitalNegative_Free(DigitalNegative *digitalNegative);
 
 #ifdef DIGITAL_NEGATIVE_IMPLEMENTATION
@@ -31,6 +34,7 @@ typedef struct {
 } Ifd;
 
 #define crashAndLogIf(condition, message) {if (condition) { printf("%s\n", message); exit(EXIT_FAILURE); }}
+#define log(printfArgs) { printf(printfArgs); printf("\n"); }
 
 bool stringEndsWith(const char *string, const char *suffix) {
   const int stringLength = strlen(string);
@@ -39,41 +43,65 @@ bool stringEndsWith(const char *string, const char *suffix) {
   if (suffixLength > stringLength) return false;
 
   int i;
+  int suffixI = 0;
   for (i = stringLength - suffixLength; i < stringLength; i++) {
-    if (string[i] != suffix[i]) return false;
+    if (string[i] != suffix[suffixI]) return false;
+    suffixI++;
   }
 
   return true;
 }
 
 void readTiffHeader(FileReader *reader, TiffHeader *output) {
-  char *bytes;
-  bytes = FileReader_ReadNBytes(reader, 2);
+  char bytes[256];
+  FileReader_ReadNBytes(reader, 2, bytes);
   bool isLittleEndian = strcmp(bytes, BYTES01_LITTLE_ENDIAN) == 0;
   if (!isLittleEndian) {
     reader->byteOrder = FILE_BYTE_ORDER_BIG_ENDIAN;
     crashAndLogIf(strcmp(bytes, BYTES01_BIG_ENDIAN) != 0, "File is neither big endian nor little endian.");
   }
 
-  bytes = FileReader_ReadNBytes(reader, 2);
-  bool isTiffCompatible = bytes[0] == BYTES23_TIFF[0] && bytes[1] == BYTES23_TIFF[1];
-  crashAndLogIf(!isTiffCompatible, "Missing magic number identifying file as Tiff (42).");
+  printf("File is %s endian.\n", isLittleEndian ? "little" : "big");
 
-  int firstIFDOffset = FileReader_ReadIntegerOfNBytes(reader, 4);
+  int magicNumber;
+  FileReader_ReadIntegerOfNBytes(reader, 2, &magicNumber);
+  crashAndLogIf(magicNumber != TIFF_MAGIC_NUMBER, "Missing magic number identifying file as Tiff.");
+
+  printf("Found magic number %d.\n", TIFF_MAGIC_NUMBER);
+
+  int firstIFDOffset;
+  FileReader_ReadIntegerOfNBytes(reader, 4, &firstIFDOffset);
   bool firstIFDOffsetIsOnWordBoundary = firstIFDOffset % 4 == 0;
   crashAndLogIf(!firstIFDOffsetIsOnWordBoundary, "First IFD offset must be on word boundary.");
+
+  printf("First IFD offset is %d.\n", firstIFDOffset);
 }
 
-DigitalNegative DigtalNegative_Decode(const char *filePath) {
-  crashAndLogIf(!(stringEndsWith(filePath, ".DNG") || stringEndsWith(filePath, ".TIF")), "Can't open digital negative file - wrong file extension. (Must be .DNG or .TIF)");
+void readIfd(FileReader *reader, Ifd *output) {
+  // TODO: implement
+}
+
+void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
+  const int characterCount = strlen(filePath);
+  char *uppercasePath = malloc(characterCount + 1);
+  int i;
+  for (i = 0; i < characterCount; i++) {
+    uppercasePath[i] = toupper(filePath[i]);
+  }
+
+  crashAndLogIf(!(stringEndsWith(uppercasePath, ".DNG") || stringEndsWith(uppercasePath, ".TIF")), "Can't open digital negative file - wrong file extension. (Must be .DNG or .TIF)");
   
   FileReader *reader = FileReader_Open(filePath);
 
+  printf("Reading TIFF Header...\n");
   TiffHeader header;
   readTiffHeader(reader, &header);
+  printf("...DONE.\n\n");
 
+  printf("Reading IFDs...\n");
   Ifd ifd;
   readIfd(reader, &ifd);
+  printf("...DONE.\n\n");
 
   FileReader_Close(reader);
 }

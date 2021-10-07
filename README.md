@@ -11,4 +11,4 @@ A header-only C library for decoding Adobe DNG files.
 
 ## Status
 
-Currently working through baseline Tiff 6.0 specification, (subset of DNG specification).
+Currently working through baseline Tiff 6.0 specification (subset of DNG specification).

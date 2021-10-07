@@ -12,14 +12,13 @@
 #include <stdlib.h>
 
 #define FILE_EOF EOF
+
+#ifndef MAX_STRING_SIZE
 #define MAX_STRING_SIZE 4096
+#endif
 
 #ifndef FILE_READER_MAX_READ_SIZE
 #define FILE_READER_MAX_READ_SIZE 256
-#endif
-
-#ifndef FILE_READER_BUFFER_SIZE
-#define FILE_READER_BUFFER_SIZE 1024
 #endif
 
 typedef enum {

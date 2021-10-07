@@ -12,8 +12,6 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#define TIFF_MAGIC_NUMBER 42
-
 typedef struct {
 } DigitalNegative;
 
@@ -27,7 +25,7 @@ void DigitalNegative_Free(DigitalNegative *digitalNegative);
 
 #define BYTES01_LITTLE_ENDIAN "II"
 #define BYTES01_BIG_ENDIAN "MM"
-const static char BYTES23_TIFF[2] = {4, 2};
+#define TIFF_MAGIC_NUMBER 42
 
 typedef struct {
   bool isLittleEndian;

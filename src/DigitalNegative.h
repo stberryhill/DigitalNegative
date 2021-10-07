@@ -1,3 +1,8 @@
+/*
+ * License: Zlib
+ * Copyright (c) Sean Tyler Berryhill (sean.tyler.berryhill@gmail.com)
+ */
+
 #define DIGITAL_NEGATIVE_IMPLEMENTATION
 #ifndef DIGITAL_NEGATIVE_H
 #define DIGITAL_NEGATIVE_H

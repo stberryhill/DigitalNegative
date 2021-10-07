@@ -43,6 +43,7 @@ FileReader *FileReader_Open(const char *fileName);
 void FileReader_Close(FileReader *fileReader);
 void FileReader_ReadNBytes(FileReader *reader, const int n, char *output);
 void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output);
+void FileReader_SetReadPosition(FileReader *reader, long readPosition);
 
 File *File_Open(const char *fileName, FileMode fileMode);
 void File_Close(File *file);
@@ -51,6 +52,7 @@ char File_ReadCharacter(File *file);
 char File_PeekCharacter(File *file);
 void File_Rewind(File *file, int numCharactersToRewind);
 long File_GetReadWritePosition(File *file);
+void File_SetReadWritePosition(File *file, long readWritePosition);
 bool File_ReachedEndOfFile(File *file);
 void File_ReadEntireContentsToString(File *file, char *output);
 int File_GetSize(File *file);
@@ -94,6 +96,10 @@ void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output
   }
 
   *output = number;
+}
+
+void FileReader_SetReadPosition(FileReader *reader, long readPosition) {
+  File_SetReadWritePosition(reader->file, readPosition);
 }
 
 File *File_Open(const char *fileName, FileMode fileMode) {
@@ -174,6 +180,10 @@ void File_Rewind(File *file, int numCharactersToRewind) {
 
 long File_GetReadWritePosition(File *file) {
   return ftell(file->descriptor);
+}
+
+void File_SetReadWritePosition(File *file, long readWritePosition) {
+  fseek(file->descriptor, readWritePosition, 0);
 }
 
 bool File_ReachedEndOfFile(File *file) {

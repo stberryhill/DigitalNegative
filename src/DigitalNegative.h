@@ -29,8 +29,51 @@ typedef struct {
   int firstIfdOffset;
 } TiffHeader;
 
+typedef enum {
+  FIELD_TYPE_BYTE,       /* 8-bit unsigned integer.*/
+  FIELD_TYPE_ASCII,      /* 8-bit byte that contains a 7-bit ASCII code; the last byte must be NUL (binary zero). */
+  FIELD_TYPE_SHORT,      /* 16-bit (2-byte) unsigned integer. */
+  FIELD_TYPE_LONG,       /* 32-bit (4-byte) unsigned integer. */
+  FIELD_TYPE_RATIONAL,   /* Two LONGs (4 bytes each):  the first represents the numerator of a fraction; the second, the denominator. */
+  FIELD_TYPE_SBYTE,      /* An 8-bit signed (twos-complement) integer. */
+  FIELD_TYPE_UNDEFINED,  /* An 8-bit byte that may contain anything, depending on the definition of the field. */
+  FIELD_TYPE_SSHORT,     /* A 16-bit (2-byte) signed (twos-complement) integer. */
+  FIELD_TYPE_SLONG,      /* A 32-bit (4-byte) signed (twos-complement) integer. */
+  FIELD_TYPE_SRATIONAL,  /* Two SLONG’s:  the first represents the numerator of a fraction, the second the denominator. */
+  FIELD_TYPE_FLOAT,      /* Single precision (4-byte) IEEE format. */
+  FIELD_TYPE_DOUBLE,     /* Double precision (8-byte) IEEE format. */
+  FIELD_TYPE_COUNT
+} FieldType;
+
+static const int fieldTypeSizeLookupArray[FIELD_TYPE_COUNT] = {1, 1, 2, 4, 8, 1, 2, 4, 8, 4, 8};
+
+typedef union {
+  char bytes[8];
+  char byteValue;
+  char asciiValue;
+  short shortValue;
+  int longValue;
+  long rationalValue;
+  short sshortValue;
+  int slongValue;
+  long srationalValue;
+  float floatValue;
+  double doubleValue;
+} FieldValue;
+
+/* An IFD entry is synonymous with a field */
+typedef struct {
+  short tag;
+  FieldType fieldType;
+  int valueCount; /* Fields have a value count, they are 1D arrays. But most fields contain only a single value. */
+  int valueOffset;
+} IfdEntry;
+
 typedef struct {
   int offset;
+  int numberOfEntries;
+  IfdEntry *entries;
+  int nextIfdOffset;
 } Ifd;
 
 #define crashAndLogIf(condition, message) {if (condition) { printf("%s\n", message); exit(EXIT_FAILURE); }}
@@ -77,8 +120,49 @@ void readTiffHeader(FileReader *reader, TiffHeader *output) {
   printf("First IFD offset is %d.\n", firstIFDOffset);
 }
 
-void readIfd(FileReader *reader, Ifd *output) {
-  // TODO: implement
+void readIfdEntry(FileReader *reader, IfdEntry *output) {
+  int tag;
+  FileReader_ReadIntegerOfNBytes(reader, 2, &tag);
+
+  /* Warning: It is possible that other TIFF field types will be added in the future.
+   * Readers should skip over fields containing an unexpected field type. */
+  int fieldTypeCode;
+  FileReader_ReadIntegerOfNBytes(reader, 2, &fieldTypeCode);
+  crashAndLogIf(fieldTypeCode <= 0, "Field type code must be > 0.");
+
+  int valueCount;
+  FileReader_ReadIntegerOfNBytes(reader, 4, &valueCount);
+  crashAndLogIf(valueCount <= 0, "Value count of IFD entry must be > 0.");
+
+  /* To save time and space the Value Offset contains the Value instead of pointing to
+   * the Value if and only if the Value fits into 4 bytes. If the Value is shorter than 4
+   * bytes, it is left-justified within the 4-byte Value Offset, i.e., stored in the lower-
+   * numbered bytes. Whether the Value fits within 4 bytes is determined by the Type
+   * and Count of the field */
+  int valueOffset;
+  FileReader_ReadIntegerOfNBytes(reader, 4, &valueOffset);
+  bool valueOffsetIsOnWordBoundary = valueOffset % 4 == 0;
+  crashAndLogIf(!valueOffsetIsOnWordBoundary, "First IFD offset must be on word boundary.");
+}
+
+void readIfd(FileReader *reader, const int ifdOffset, Ifd *output) {
+  output->offset = ifdOffset;
+  FileReader_SetReadPosition(reader, ifdOffset);
+
+  char bytes[16];
+  FileReader_ReadIntegerOfNBytes(reader, 2, &output->numberOfEntries);
+  crashAndLogIf(output->numberOfEntries <= 0, "IFD has invalid number of entries (must be > 0).");
+
+  printf("Number of entires = %d.\n", output->numberOfEntries);
+
+  output->entries = malloc(output->numberOfEntries * (sizeof *output->entries));
+
+  int i;
+  for (i = 0; i < output->numberOfEntries; i++) {
+    printf("Reading IFD Entry...\n");
+    readIfdEntry(reader, &output->entries[i]); // Must be in ascending order by tag.
+    printf("...DONE\n\n");
+  }
 }
 
 void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
@@ -100,7 +184,7 @@ void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
 
   printf("Reading IFDs...\n");
   Ifd ifd;
-  readIfd(reader, &ifd);
+  readIfd(reader, header.firstIfdOffset, &ifd);
   printf("...DONE.\n\n");
 
   FileReader_Close(reader);

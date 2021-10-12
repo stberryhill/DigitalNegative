@@ -34,6 +34,9 @@ typedef struct {
   int firstIfdOffset;
 } TiffHeader;
 
+#define TIFF_WORD_SIZE 2
+#define endsOnTiffWordBoundary(x) x % TIFF_WORD_SIZE == 0
+
 typedef enum {
   FIELD_TYPE_BYTE,       /* 8-bit unsigned integer.*/
   FIELD_TYPE_ASCII,      /* 8-bit byte that contains a 7-bit ASCII code; the last byte must be NUL (binary zero). */
@@ -68,7 +71,7 @@ typedef union {
 
 /* An IFD entry is synonymous with a field */
 typedef struct {
-  short tag;
+  uint32_t tag;
   FieldType fieldType;
   int valueCount; /* Fields have a value count, they are 1D arrays. But most fields contain only a single value. */
   int valueOffset;
@@ -103,34 +106,31 @@ bool stringEndsWith(const char *string, const char *suffix) {
 void readTiffHeader(FileReader *reader, TiffHeader *output) {
   char bytes[256];
   FileReader_ReadNBytes(reader, 2, bytes);
-  bool isLittleEndian = strcmp(bytes, BYTES01_LITTLE_ENDIAN) == 0;
-  if (!isLittleEndian) {
+  output->isLittleEndian = strcmp(bytes, BYTES01_LITTLE_ENDIAN) == 0;
+  if (!output->isLittleEndian) {
     reader->byteOrder = FILE_BYTE_ORDER_BIG_ENDIAN;
     crashAndLogIf(strcmp(bytes, BYTES01_BIG_ENDIAN) != 0, "File is neither big endian nor little endian.");
   }
 
-  printf("File is %s endian.\n", isLittleEndian ? "little" : "big");
+  printf("File is %s endian.\n", output->isLittleEndian ? "little" : "big");
 
   uint32_t magicNumber;
   FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &magicNumber);
-  printf("number = %u\n", magicNumber);
   crashAndLogIf(magicNumber != TIFF_MAGIC_NUMBER, "Missing magic number identifying file as Tiff.");
 
   printf("Found magic number %u.\n", TIFF_MAGIC_NUMBER);
 
-  uint32_t firstIFDOffset;
-  FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &firstIFDOffset);
-  bool firstIFDOffsetIsOnWordBoundary = firstIFDOffset % 4 == 0;
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &output->firstIfdOffset);
+  bool firstIFDOffsetIsOnWordBoundary = endsOnTiffWordBoundary(output->firstIfdOffset);
   crashAndLogIf(!firstIFDOffsetIsOnWordBoundary, "First IFD offset must be on word boundary.");
 
-  printf("First IFD offset is %u.\n", firstIFDOffset);
+  printf("First IFD offset is %u.\n", output->firstIfdOffset);
 }
 
 void readIfdEntry(FileReader *reader, IfdEntry *output) {
-  uint32_t tag;
-  FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &tag);
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &output->tag);
 
-  printf("Entry has tag %u.\n", tag);
+  printf("Entry has tag %u.\n", output->tag);
 
   /* Warning: It is possible that other TIFF field types will be added in the future.
    * Readers should skip over fields containing an unexpected field type. */
@@ -145,30 +145,28 @@ void readIfdEntry(FileReader *reader, IfdEntry *output) {
     const int bytesLeftInEntry = 8; // Each ifd entry is 12 bytes
     FileReader_SetReadPosition(reader, FileReader_GetReadPosition(reader) + (long) bytesLeftInEntry); // Skip unknown field type.
   } else {
-    const FieldType fieldType = fieldTypeCode - 1;
-    const int fieldTypeSize = fieldTypeSizeLookupArray[fieldType];
+    output->fieldType = fieldTypeCode - 1;
+    const int fieldTypeSize = fieldTypeSizeLookupArray[output->fieldType];
 
-    uint32_t valueCount;
-    FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &valueCount);
-    crashAndLogIf(valueCount <= 0, "Value count of IFD entry must be > 0.");
+    FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &output->valueCount);
+    crashAndLogIf(output->valueCount <= 0, "Value count of IFD entry must be > 0.");
 
-    printf("Value count = %u.\n", valueCount);
+    printf("Value count = %u.\n", output->valueCount);
 
     /* To save time and space the Value Offset contains the Value instead of pointing to
     * the Value if and only if the Value fits into 4 bytes. If the Value is shorter than 4
     * bytes, it is left-justified within the 4-byte Value Offset, i.e., stored in the lower-
     * numbered bytes. Whether the Value fits within 4 bytes is determined by the TypeValue count
     * and Count of the field */
-    uint32_t valueOffset;
-    FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &valueOffset);
-    printf("Value offset = %u.\n", valueOffset);
+    FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &output->valueOffset);
+    printf("Value offset = %u.\n", output->valueOffset);
 
-    bool valueIsStoredInValueOffset = (valueCount * fieldTypeSize) <= 4;
+    bool valueIsStoredInValueOffset = (output->valueCount * fieldTypeSize) <= 4;
     
     if (valueIsStoredInValueOffset) {
 
     } else {
-      bool valueOffsetIsOnWordBoundary = valueOffset % 4 == 0;
+      bool valueOffsetIsOnWordBoundary = endsOnTiffWordBoundary(output->valueOffset);
       crashAndLogIf(!valueOffsetIsOnWordBoundary, "Value offset must be on word boundary.");
     }
   }

@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define FILE_EOF EOF
 
@@ -46,8 +47,10 @@ typedef struct {
 FileReader *FileReader_Open(const char *fileName);
 void FileReader_Close(FileReader *fileReader);
 void FileReader_ReadNBytes(FileReader *reader, const int n, char *output);
-void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output);
+void FileReader_ReadSignedIntegerOfNBytes(FileReader *reader, const int n, int *output);
+void FileReader_ReadUnsignedIntegerOfNBytes(FileReader *reader, const int n, uint32_t *output);
 void FileReader_SetReadPosition(FileReader *reader, long readPosition);
+long FileReader_GetReadPosition(FileReader *reader);
 
 File *File_Open(const char *fileName, FileMode fileMode);
 void File_Close(File *file);
@@ -86,8 +89,15 @@ void FileReader_ReadNBytes(FileReader *reader, const int n, char *output) {
   output[i] = '\0';
 }
 
-void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output) {
-  char bytes[n];
+void binary(int x, char *bits) {
+  int i;
+  for (i = 0; i < 32; i++) {
+    bits[31 - i] = ((x & (1 << i)) != 0) + 48;
+  }
+}
+
+void FileReader_ReadSignedIntegerOfNBytes(FileReader *reader, const int n, int *output) {
+  unsigned char bytes[n];
   FileReader_ReadNBytes(reader, n, bytes);
 
   int number = 0;
@@ -102,8 +112,28 @@ void FileReader_ReadIntegerOfNBytes(FileReader *reader, const int n, int *output
   *output = number;
 }
 
+void FileReader_ReadUnsignedIntegerOfNBytes(FileReader *reader, const int n, uint32_t *output) {
+  unsigned char bytes[n];
+  FileReader_ReadNBytes(reader, n, bytes);
+
+  uint32_t number = 0;
+  int i;
+  int shift = reader->byteOrder == FILE_BYTE_ORDER_LITTLE_ENDIAN ? 0 : (n - 1) * 8;
+  int shiftIncrement = reader->byteOrder == FILE_BYTE_ORDER_LITTLE_ENDIAN ? 8 : -8;
+  for (i = 0; i < n; i++) {
+    number += bytes[i] << shift;
+    shift += shiftIncrement;
+  }
+
+  *output = number;
+}
+
 void FileReader_SetReadPosition(FileReader *reader, long readPosition) {
   File_SetReadWritePosition(reader->file, readPosition);
+}
+
+long FileReader_GetReadPosition(FileReader *reader) {
+  return File_GetReadWritePosition(reader->file);
 }
 
 File *File_Open(const char *fileName, FileMode fileMode) {
@@ -187,7 +217,7 @@ long File_GetReadWritePosition(File *file) {
 }
 
 void File_SetReadWritePosition(File *file, long readWritePosition) {
-  fseek(file->descriptor, readWritePosition, 0);
+  fseek(file->descriptor, readWritePosition, SEEK_SET);
 }
 
 bool File_ReachedEndOfFile(File *file) {

@@ -11,8 +11,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <stdint.h>
 
 typedef struct {
+  uint16_t photometricInterpretation;
 } DigitalNegative;
 
 void DigitalNegative_Decode(const char *filePath, DigitalNegative *output);
@@ -73,10 +75,10 @@ typedef struct {
 } IfdEntry;
 
 typedef struct {
-  int offset;
-  int numberOfEntries;
+  uint32_t offset;
+  uint32_t numberOfEntries;
   IfdEntry *entries;
-  int nextIfdOffset;
+  uint32_t nextIfdOffset;
 } Ifd;
 
 #define crashAndLogIf(condition, message) {if (condition) { printf("%s\n", message); exit(EXIT_FAILURE); }}
@@ -109,54 +111,77 @@ void readTiffHeader(FileReader *reader, TiffHeader *output) {
 
   printf("File is %s endian.\n", isLittleEndian ? "little" : "big");
 
-  int magicNumber;
-  FileReader_ReadIntegerOfNBytes(reader, 2, &magicNumber);
+  uint32_t magicNumber;
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &magicNumber);
+  printf("number = %u\n", magicNumber);
   crashAndLogIf(magicNumber != TIFF_MAGIC_NUMBER, "Missing magic number identifying file as Tiff.");
 
-  printf("Found magic number %d.\n", TIFF_MAGIC_NUMBER);
+  printf("Found magic number %u.\n", TIFF_MAGIC_NUMBER);
 
-  int firstIFDOffset;
-  FileReader_ReadIntegerOfNBytes(reader, 4, &firstIFDOffset);
+  uint32_t firstIFDOffset;
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &firstIFDOffset);
   bool firstIFDOffsetIsOnWordBoundary = firstIFDOffset % 4 == 0;
   crashAndLogIf(!firstIFDOffsetIsOnWordBoundary, "First IFD offset must be on word boundary.");
 
-  printf("First IFD offset is %d.\n", firstIFDOffset);
+  printf("First IFD offset is %u.\n", firstIFDOffset);
 }
 
 void readIfdEntry(FileReader *reader, IfdEntry *output) {
-  int tag;
-  FileReader_ReadIntegerOfNBytes(reader, 2, &tag);
+  uint32_t tag;
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &tag);
+
+  printf("Entry has tag %u.\n", tag);
 
   /* Warning: It is possible that other TIFF field types will be added in the future.
    * Readers should skip over fields containing an unexpected field type. */
-  int fieldTypeCode;
-  FileReader_ReadIntegerOfNBytes(reader, 2, &fieldTypeCode);
-  crashAndLogIf(fieldTypeCode <= 0, "Field type code must be > 0.");
+  uint32_t fieldTypeCode;
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &fieldTypeCode);
+  crashAndLogIf(fieldTypeCode < 0, "Field type code must be > 0.");
 
-  int valueCount;
-  FileReader_ReadIntegerOfNBytes(reader, 4, &valueCount);
-  crashAndLogIf(valueCount <= 0, "Value count of IFD entry must be > 0.");
+  printf("Field type code = %u.\n", fieldTypeCode);
 
-  /* To save time and space the Value Offset contains the Value instead of pointing to
-   * the Value if and only if the Value fits into 4 bytes. If the Value is shorter than 4
-   * bytes, it is left-justified within the 4-byte Value Offset, i.e., stored in the lower-
-   * numbered bytes. Whether the Value fits within 4 bytes is determined by the Type
-   * and Count of the field */
-  int valueOffset;
-  FileReader_ReadIntegerOfNBytes(reader, 4, &valueOffset);
-  bool valueOffsetIsOnWordBoundary = valueOffset % 4 == 0;
-  crashAndLogIf(!valueOffsetIsOnWordBoundary, "First IFD offset must be on word boundary.");
+  const bool isUnknownFieldType = fieldTypeCode > FIELD_TYPE_COUNT || fieldTypeCode < 1;
+  if (isUnknownFieldType) {
+    const int bytesLeftInEntry = 8; // Each ifd entry is 12 bytes
+    FileReader_SetReadPosition(reader, FileReader_GetReadPosition(reader) + (long) bytesLeftInEntry); // Skip unknown field type.
+  } else {
+    const FieldType fieldType = fieldTypeCode - 1;
+    const int fieldTypeSize = fieldTypeSizeLookupArray[fieldType];
+
+    uint32_t valueCount;
+    FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &valueCount);
+    crashAndLogIf(valueCount <= 0, "Value count of IFD entry must be > 0.");
+
+    printf("Value count = %u.\n", valueCount);
+
+    /* To save time and space the Value Offset contains the Value instead of pointing to
+    * the Value if and only if the Value fits into 4 bytes. If the Value is shorter than 4
+    * bytes, it is left-justified within the 4-byte Value Offset, i.e., stored in the lower-
+    * numbered bytes. Whether the Value fits within 4 bytes is determined by the TypeValue count
+    * and Count of the field */
+    uint32_t valueOffset;
+    FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &valueOffset);
+    printf("Value offset = %u.\n", valueOffset);
+
+    bool valueIsStoredInValueOffset = (valueCount * fieldTypeSize) <= 4;
+    
+    if (valueIsStoredInValueOffset) {
+
+    } else {
+      bool valueOffsetIsOnWordBoundary = valueOffset % 4 == 0;
+      crashAndLogIf(!valueOffsetIsOnWordBoundary, "Value offset must be on word boundary.");
+    }
+  }
 }
 
 void readIfd(FileReader *reader, const int ifdOffset, Ifd *output) {
   output->offset = ifdOffset;
   FileReader_SetReadPosition(reader, ifdOffset);
 
-  char bytes[16];
-  FileReader_ReadIntegerOfNBytes(reader, 2, &output->numberOfEntries);
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 2, &output->numberOfEntries);
   crashAndLogIf(output->numberOfEntries <= 0, "IFD has invalid number of entries (must be > 0).");
 
-  printf("Number of entires = %d.\n", output->numberOfEntries);
+  printf("Number of entires = %u.\n", output->numberOfEntries);
 
   output->entries = malloc(output->numberOfEntries * (sizeof *output->entries));
 
@@ -166,6 +191,10 @@ void readIfd(FileReader *reader, const int ifdOffset, Ifd *output) {
     readIfdEntry(reader, &output->entries[i]); // Must be in ascending order by tag.
     printf("...DONE\n\n");
   }
+
+  FileReader_ReadUnsignedIntegerOfNBytes(reader, 4, &output->nextIfdOffset);
+
+  printf("Next IFD offset = %u.\n", output->nextIfdOffset);
 }
 
 void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
@@ -186,8 +215,16 @@ void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
   printf("...DONE.\n\n");
 
   printf("Reading IFDs...\n");
-  Ifd ifd;
-  readIfd(reader, header.firstIfdOffset, &ifd);
+  bool moreIfds = true;
+  uint32_t offset = header.firstIfdOffset;
+  while (moreIfds) {
+    Ifd ifd;
+    readIfd(reader, offset, &ifd);
+
+    offset = ifd.nextIfdOffset;
+    moreIfds = offset != 0;
+  }
+
   printf("...DONE.\n\n");
 
   FileReader_Close(reader);

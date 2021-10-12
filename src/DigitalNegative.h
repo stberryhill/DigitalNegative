@@ -28,14 +28,14 @@ void DigitalNegative_Free(DigitalNegative *digitalNegative);
 #define BYTES01_LITTLE_ENDIAN "II"
 #define BYTES01_BIG_ENDIAN "MM"
 #define TIFF_MAGIC_NUMBER 42
+#define TIFF_WORD_SIZE 2
+
+#define endsOnTiffWordBoundary(x) x % TIFF_WORD_SIZE == 0
 
 typedef struct {
   bool isLittleEndian;
   int firstIfdOffset;
 } TiffHeader;
-
-#define TIFF_WORD_SIZE 2
-#define endsOnTiffWordBoundary(x) x % TIFF_WORD_SIZE == 0
 
 typedef enum {
   FIELD_TYPE_BYTE,       /* 8-bit unsigned integer.*/
@@ -75,6 +75,7 @@ typedef struct {
   FieldType fieldType;
   int valueCount; /* Fields have a value count, they are 1D arrays. But most fields contain only a single value. */
   int valueOffset;
+  FieldValue *values; /* TODO: Design map on paper. This will be in the map. values only loaded when requested */
 } IfdEntry;
 
 typedef struct {

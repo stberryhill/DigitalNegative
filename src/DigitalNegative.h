@@ -205,6 +205,7 @@ void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
   }
 
   crashAndLogIf(!(stringEndsWith(uppercasePath, ".DNG") || stringEndsWith(uppercasePath, ".TIF")), "Can't open digital negative file - wrong file extension. (Must be .DNG or .TIF)");
+  free(uppercasePath);
   
   FileReader *reader = FileReader_Open(filePath);
 
@@ -230,7 +231,7 @@ void DigitalNegative_Decode(const char *filePath, DigitalNegative *output) {
 }
 
 void DigitalNegative_Free(DigitalNegative *digitalNegative) {
-  free (digitalNegative);
+  free(digitalNegative);
 }
 
 #endif

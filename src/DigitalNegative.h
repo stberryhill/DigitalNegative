@@ -56,7 +56,7 @@ typedef enum {
 static const int fieldTypeSizeLookupArray[FIELD_TYPE_COUNT] = {1, 1, 2, 4, 8, 1, 2, 4, 8, 4, 8};
 
 typedef union {
-  char bytes[8];
+  char bytes[8]; // For internal representation and to allow easily reading FieldValues
   char byteValue;
   char asciiValue;
   short shortValue;
@@ -165,10 +165,29 @@ void readIfdEntry(FileReader *reader, IfdEntry *output) {
     bool valueIsStoredInValueOffset = (output->valueCount * fieldTypeSize) <= 4;
     
     if (valueIsStoredInValueOffset) {
-
+      // Do nothing for now
     } else {
       bool valueOffsetIsOnWordBoundary = endsOnTiffWordBoundary(output->valueOffset);
       crashAndLogIf(!valueOffsetIsOnWordBoundary, "Value offset must be on word boundary.");
+    }
+  }
+}
+
+void readIfdFieldValues(FileReader *reader, const IfdEntry *entry, FieldValue *outputValues) {
+    /* To save time and space the Value Offset contains the Value instead of pointing to
+  * the Value if and only if the Value fits into 4 bytes. If the Value is shorter than 4
+  * bytes, it is left-justified within the 4-byte Value Offset, i.e., stored in the lower-
+  * numbered bytes. Whether the Value fits within 4 bytes is determined by the TypeValue count
+  * and Count of the field */
+  const int fieldTypeSize = fieldTypeSizeLookupArray[entry->fieldType];
+
+  if (entry->valueCount * fieldTypeSize <= 4) {
+    outputValues[0].bytes = entry->valueOffset >> (8 - fieldTypeSize);
+  } else {
+    for (int valueIndex = 0; valueIndex < entry->valueCount; valueIndex++) {
+      uint32 bytes;
+      FileReader_ReadUnsignedIntegerOfNBytes(reader, fieldTypeSize, &bytes);
+      outputValues[valueIndex] = bytes >> (8 - fieldTypeSize);
     }
   }
 }

@@ -6,3 +6,4 @@ The DNG format is an extension of TIFF 6.0, so it must support everything specif
 * Support either byte order.
 * Ignore optional tags.
 * Deal with non-optional tags.
+* The largest possible TIFF file is 2**32 bytes in length.
